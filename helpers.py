@@ -5,6 +5,7 @@
 #from flask import redirect, render_template, request, session
 #from functools import wraps
 from db_description import Allergies, Recipes, Recipes_Allerg
+from utils import db
 
 
 def get_allergens():

@@ -12,25 +12,13 @@ class Users(db.Model):
 
     __tablename__ = "users"
 
-    login = db.Column(db.String(4096), primary_key=True)
-    name = db.Column(db.String(4096))
+    login = db.Column(db.String(4096), primary_key=True, unique=True)
     favorites = db.Column(ScalarListType(db.Integer))  #list of recipes' id
     allergies = db.Column(ScalarListType()) #list of user's allergies
-
-    password = db.Column(
-        PasswordType(
-            # The returned dictionary is forwarded to the CryptContext
-            onload=lambda **kwargs: dict(
-                schemes=flask.current_app.config['PASSWORD_SCHEMES'],
-                **kwargs
-            ),
-        ),
-        unique=False,
-        nullable=False,
-    )
+    password = db.Column(db.String(4096), nullable=False)
 
     def search_recipes(self):
-        ''' search recipes based on conditions and return a list of id '''
+        ''' search recipes based on conditions and return a list'''
         pass
 
     def get_favorites(self):
