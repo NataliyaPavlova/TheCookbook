@@ -4,6 +4,9 @@ import flask
 import sqlalchemy
 from sqlalchemy_utils import PasswordType, ScalarListType
 
+from utils import db
+from helpers import get_allergens, put_to_rec_all
+
 # Describe database structure
 class Users(db.Model):
 
@@ -59,7 +62,7 @@ class Recipes(db.Model, Allergies):
         allergens = []
 
         #get allergens from db table 'Allergies'
-   #!!!!!!!!!!     dct_all = get_allergens()
+        dct_all = get_allergens()
 
         # check if there are allergens and make a list
         allergens.extend(check_recipe(ingredients, dct_all))
@@ -105,7 +108,7 @@ class Recipes_Allerg(db.Model):
     __tablename__='recipes_allergies'
 
     recipe_id = db.Column(db.Integer, ForeignKey='recipes.id')
-    allergen = db.Column(db.Integer, ForeignKey='allergies.id')
+    allergen_id = db.Column(db.Integer, ForeignKey='allergies.id')
 
 
 class Fill_Model(db.Model):
@@ -132,12 +135,11 @@ class Fill_Model(db.Model):
                              categories = recipe_dct['categories'],
                              rating=0)
             db.session.add(recipe)
-            #check if it's allergic
+
+            #check if it's allergic. if so - add to recipes_allergies table
             if recipe.check_allergies():
-    #!!!!!!!!!!            put_to_rec_all(recipe.title, recipe.check_allergies())
+                put_to_rec_all(recipe.title, recipe.check_allergies())
         db.session.commit()
-
-
 
     def fill_allergies(self, filename):
         ''' fulfill the allergies table from the given file '''
@@ -150,8 +152,7 @@ class Fill_Model(db.Model):
         db.session.commit()
 
 
-    def fill_recipes_allergies(self):
-        pass
-
 db.create_all()
+db.fill_allergies()
+db.fill_recipes()
 
