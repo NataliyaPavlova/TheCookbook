@@ -8,7 +8,7 @@ from flask_session import Session
 
 from models import Users, Allergies, Recipes
 
-from helpers import cookbook, meets_conditions, find_recipe, search_recipes, str_to_list, login_required, apology
+#from helpers import cookbook, meets_conditions, find_recipe, search_recipes, str_to_list, login_required, apology
 
 # Configure application
 app = Flask(__name__)
@@ -113,28 +113,20 @@ def register():
 @app.route("/filter", methods = ['GET', 'POST'])
 @login_required
 def filter():
-    ''' Show filter forms to user'''
+    ''' Show filter forms with user's allergies '''
 
     #upload user's allergies from db
-    result1 = db.execute("SELECT allergies FROM users WHERE id=:id", id=session["user_id"])
-    if not result1:
-        return apology("the operation is impossible, try again later...", 403)
-
-    #make a list from a string
-    if result1[0]['allergies']:
-        user_allergies = str_to_list(result1[0]['allergies'])
-    else:
-        user_allergies=[]
+    user_allergies = Users.get_allergens(session["user_id"])
 
     #send to filter.html with a list of allergies
     return render_template('/filter.html', user_allergies=user_allergies)
 
-
+'''
 @app.route("/search_result", methods = ['GET', 'POST'])
 @login_required
 def search_result():
-    ''' Find and show search results to user'''
-
+    # Find and show search results to user
+   
     #upload user's allergies and preferencies from db
     result1 = db.execute("SELECT * FROM users WHERE id=:id", id=session["user_id"])
     if not result1:
@@ -161,6 +153,7 @@ def search_result():
 
     #send to html with a list recipes' titles
     return render_template('/search_result.html', recipes_result=recipes_result, results_number = len(recipes_result))
+'''
 
 @app.route("/recipe_search", methods = ['GET', 'POST'])
 @login_required
@@ -168,7 +161,7 @@ def recipe_search():
     ''' Forward user from search_result page to recipe page'''
 
     title = request.args['title']
-    recipe = find_recipe(title)
+    recipe = Recipes.get_recipe(title)
 
     return render_template('/recipe_search.html', recipe=recipe)
 
@@ -179,7 +172,7 @@ def recipe_favor():
     ''' Forward user from index (favorites) page to recipe page'''
 
     title = request.args['title']
-    recipe = find_recipe(title)
+    recipe = Recipes.get_recipe(title)
 
     return render_template('/recipe_favor.html', recipe=recipe)
 
@@ -189,36 +182,11 @@ def recipe_favor():
 def add_recipe_search():
     ''' Add recipe to user's favorites'''
 
-    # via GET method get title of recepie to add
+    # via GET method get title of recipe to add
     title = request.args['title']+' '
 
-    # from db get the list of IDs of user's favorite recepies
-    result1 = db.execute("SELECT * FROM users WHERE id=:id", id=session["user_id"])
-    if not result1:
-        return apology("the operation is impossible, try again later...", 403)
+    recipe = Users.add_to_favorites(session['user_id'], title)
 
-    if result1[0]['favorites']:
-        recipes = str_to_list(result1[0]['favorites'])
-    else:
-        recipes=[]
-
-
-    # from db get id using recepie's title
-    result2 = db.execute("SELECT * FROM recipes WHERE title=:title", title=title)
-    if not result2:
-        return apology("the operation is impossible, try again later...", 403)
-
-    # update the list of favorites and upload it to db
-    if not str(result2[0]['id']) in recipes:
-        recipes.append(result2[0]['id'])
-
-    result3 = db.execute("UPDATE users SET favorites=:favorites WHERE id=:id",
-                        favorites=str(recipes), id=session["user_id"] )
-    if not result3:
-        return apology("the operation is impossible, try again later...", 403)
-
-    title=title[:-1]
-    recipe = find_recipe(title)
     return render_template('/recipe_search.html', recipe=recipe)
 
 
@@ -227,23 +195,8 @@ def add_recipe_search():
 def index():
     ''' Show user's favorite recipes'''
 
-    recipes_result=[]
-    #load the list of IDs of favorite recipes
-    result1 = db.execute("SELECT favorites FROM users WHERE id=:id", id=session["user_id"])
-
-    if result1[0]['favorites']:
-        id_favorites = str_to_list(result1[0]['favorites'])
-    else:
-        return render_template('/index.html', results_number=0, recipes_result=recipes_result)
-
-    #looking for a title for every id in the list, making the list of titles
-    for id in id_favorites:
-        result2 = db.execute("SELECT title FROM recipes WHERE id=:id", id=id)
-        if not result2:
-            return apology("the operation is impossible, try again later...", 403)
-        recipes_result.append(result2[0]['title'])
-
-    return render_template('/index.html', results_number=len(recipes_result), recipes_result=recipes_result)
+    favorite_titles = Users.get_favorites(session['user_id'])
+    return render_template('/index.html', results_number=len(favorite_titles), recipes_result=favorite_titles)
 
 
 @app.route("/process", methods = ['GET', 'POST'])
@@ -255,7 +208,7 @@ def process():
     preferencies=[]
     meal=''
 
-    # No ensure in user's input is needed: no activated cheboxes - no allergy
+    # No ensure in user's input is needed: no activated checkboxes - no allergy
     if not request.method == "POST":
         return render_template('/filter.html')
 
@@ -290,7 +243,7 @@ def process():
         preferencies.append('Healthy')
     if request.form.get("Low Sugar"):
         preferencies.append('Low Sugar')
-        preferencies.append('Sugar Concious')
+        preferencies.append('Sugar Conscious')
         preferencies.append('Low/No Sugar')
         preferencies.append('Healthy')
 
@@ -301,26 +254,12 @@ def process():
         preferencies.append('22-Minute Meals')
         preferencies.append('3-Ingredient Recipes')
 
+    # update user's allergies
+    Users.update_allergies(session['user_id'], mark_allergies)
+    # search for the recipes
+    found_recipes = Users.search_recipes(session['user_id'], preferencies, meal)
 
-
-    result1 = db.execute("UPDATE users SET preferencies=:preferencies WHERE id=:id",
-                        preferencies=str(preferencies), id=session["user_id"])
-    if not result1:
-        return apology("the operation is impossible, try again later...", 403)
-
-    result2 = db.execute("UPDATE users SET allergies=:allergies WHERE id=:id",
-                         allergies=str(mark_allergies), id=session["user_id"])
-    if not result2:
-        return apology("the operation is impossible, try again later...", 403)
-
-    result3 = db.execute("UPDATE users SET meal=:meal WHERE id=:id",
-                         meal=meal, id=session["user_id"])
-    if not result3:
-        return apology("the operation is impossible, try again later...", 403)
-
-    recipes_result = search_recipes(mark_allergies, preferencies, meal)
-
-    return render_template('search_result.html', recipes_result=recipes_result, results_number=len(recipes_result))
+    return render_template('search_result.html', recipes_result=found_recipes, results_number=len(found_recipes))
 
 
 def errorhandler(e):

@@ -48,21 +48,40 @@ class Users(db.Model):
         return True
 
 
-    def search_recipes(self, preferences, meals):
+    def search_recipes(self, user_login, preferences, meals):
         ''' search recipes based on conditions and return a list of recipes' ids'''
 
         results = db.session.query(Recipes.id).\
             filter(Recipes.categories.contains([preferences.extend(meals)])).\
-            filter(sqlalchemy.not_(Recipes.allergens.contains([self.allergies]))).all()
+            filter(sqlalchemy.not_(Recipes.allergens.contains([self.get_allergens(user_login)]))).all()
 
         return results
 
+    def update_allergies(self, user_login, allergies):
+        ''' update user's allergies after filling him a filter form '''
+        db.session.query(Users).get(user_login).update({'allergens': allergies})
+        db.session.commit()
 
     def get_favorites(self, user_login):
         ''' get the user's favorites and return the list of id '''
-        favorites = db.session.query(Users.favorites).get(user_login).scalar()
-        return favorites
+        favorite_titles = db.session.query(Recipes.title).\
+            filter(Recipes.id.in_(db.session.query(Users.favorites).get(user_login).scalar())).\
+            all()
+        return favorite_titles
 
+    def add_to_favorites(self, user_login, title):
+        ''' add a recipe' id to user's favorites and returns added recipe as a dict'''
+        favorites = self.get_favorites(user_login)
+        recipe = Recipes.get_recipe(title)
+        favorites.append(recipe['id'])
+        db.session.query(Users).update({'favorites': favorites})
+        db.session.commit()
+        return recipe
+
+    def get_allergens(self, user_login):
+        ''' get the user's allergens and return the list of id '''
+        allergens = db.session.query(Users.allergies).get(user_login).scalar()
+        return allergens
 
     def vote(self, recipe_id):
         ''' adds +1 to recipe's rating '''
@@ -130,6 +149,16 @@ class Recipes(db.Model, Allergies):
         ''' get top rated recipes'''
         top_recipes = db.session.query(Recipes).order_by(Recipes.rating.desc()).limit(top)
         return top_recipes
+
+    def get_recipe(self, title):
+        ''' get a recipe by title and return it as a dict'''
+        recipe = db.session.query(Recipes).filter(Recipes.title==title)
+        dct = {'title': title,
+               'id': recipe.id,
+               'ingredients': recipe.ingredients,
+               'directions': recipe.directions,
+               'rating': rating}
+        return dct
 
 
 class Allergies(db.Model):
