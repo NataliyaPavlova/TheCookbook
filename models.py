@@ -2,12 +2,14 @@
 import json
 import flask
 import sqlalchemy
-from sqlalchemy_utils import PasswordType, ScalarListType
+from sqlalchemy_utils import ScalarListType
+from werkzeug.security import check_password_hash, generate_password_hash
+
 
 from utils import db
-from helpers import get_allergens, put_to_rec_all
 
 # Describe database structure
+
 class Users(db.Model):
 
     __tablename__ = "users"
@@ -17,21 +19,55 @@ class Users(db.Model):
     allergies = db.Column(ScalarListType()) #list of user's allergies
     password = db.Column(db.String(4096), nullable=False)
 
-    def search_recipes(self):
-        ''' search recipes based on conditions and return a list'''
-        pass
 
-    def get_favorites(self):
+    def register(self, login, password):
+        ''' add a new user to users db '''
+
+        hash = generate_password_hash(password)
+        user = Users(login=login,
+                     password=hash,
+                     favorites=[],
+                     allergies=[])
+        try:
+            db.session.add(user)
+            db.session.commit()
+        except sqlalchemy.exc:
+            db.session.rollback()
+            return False
+        return True
+
+
+    def check_login(self, login, password):
+        ''' check if the user is in db and if the password is correct'''
+
+        row = db.session.query(Users).get(login).one_or_none()
+
+        # Ensure username exists and password is correct
+        if not row or not check_password_hash(row.password, password):
+            return False
+        return True
+
+
+    def search_recipes(self, preferences, meals):
+        ''' search recipes based on conditions and return a list of recipes' ids'''
+
+        results = db.session.query(Recipes.id).\
+            filter(Recipes.categories.contains([preferences.extend(meals)])).\
+            filter(sqlalchemy.not_(Recipes.allergens.contains([self.allergies]))).all()
+
+        return results
+
+
+    def get_favorites(self, user_login):
         ''' get the user's favorites and return the list of id '''
-        pass
+        favorites = db.session.query(Users.favorites).get(user_login).scalar()
+        return favorites
 
-    def get_top(self):
-        ''' get top rated recipes'''
-        pass
 
-    def vote(self, value, recipe_id):
-        ''' if not none, send to function makes change in recipe'''
-        pass
+    def vote(self, recipe_id):
+        ''' adds +1 to recipe's rating '''
+        db.session.query(Recipes).get(recipe_id).update({"rating": (Recipes.rating + 1)})
+        db.session.commit()
 
 
 class Recipes(db.Model, Allergies):
@@ -43,21 +79,30 @@ class Recipes(db.Model, Allergies):
     title = db.Column(db.String(4096))
     ingredients = db.Column(ScalarListType())
     categories = db.Column(ScalarListType())
+    allergens = db.Column(ScalarListType())
     rating = db.Column(db.Integer)
 
-    def check_allergies(self):
+    def check_allergies(self, *components):
         ''' returns the list of allergens based on ingredients and categories'''
         allergens = []
 
         #get allergens from db table 'Allergies'
-        dct_all = get_allergens()
+        dct_allergens = self.get_allergens()
 
         # check if there are allergens and make a list
-        allergens.extend(check_recipe(ingredients, dct_all))
-        allergens.extend(check_recipe(categories, dct_all))
-
+        for component in components:
+            allergens.extend(check_recipe(component, dct_allergens))
         return allergens
 
+    def get_allergens(self):
+        ''' get allergens (dict) from db table Allergies'''
+
+        # Retrieve data from db
+        dct_allergens = {}
+        lst_allergens = Allergies.query.all()
+        for row in lst_allergens:
+            dct_allergens[row.allergen] = row.key_words
+        return dct_allergens
 
     @staticmethod
     def check_recipe(components, constrains):
@@ -77,9 +122,14 @@ class Recipes(db.Model, Allergies):
             for component in components_set:
                 if component in constrains[allergen]:
                     allergens.append(allergen)
-                    break
+                    break  #and check next allergen
 
         return allergens
+
+    def get_top(self, top):
+        ''' get top rated recipes'''
+        top_recipes = db.session.query(Recipes).order_by(Recipes.rating.desc()).limit(top)
+        return top_recipes
 
 
 class Allergies(db.Model):
@@ -91,14 +141,7 @@ class Allergies(db.Model):
     key_words = db.Column(ScalarListType())
 
 
-class Recipes_Allerg(db.Model):
-
-    __tablename__='recipes_allergies'
-
-    recipe_id = db.Column(db.Integer, ForeignKey='recipes.id')
-    allergen_id = db.Column(db.Integer, ForeignKey='allergies.id')
-
-
+# class to fulfill a database with data
 class Fill_Model(db.Model):
 
     def fill_recipes(self, filename):
@@ -117,17 +160,18 @@ class Fill_Model(db.Model):
                 continue
             #add to db
             titles.add(recipe_dct['title'])
+
+            # check if it's allergic.
+            allergens = Recipes.check_allergies(recipe_dct['ingredients'], recipe_dct['categories'])
+
             recipe = Recipes(title = recipe_dct['title'],
                              directions = recipe_dct['directions'],
                              ingredients = recipe_dct['ingredients'],
                              categories = recipe_dct['categories'],
+                             allergens = allergens,
                              rating=0)
             db.session.add(recipe)
-
-            #check if it's allergic. if so - add to recipes_allergies table
-            if recipe.check_allergies():
-                put_to_rec_all(recipe.title, recipe.check_allergies())
-        db.session.commit()
+            db.session.commit()
 
     def fill_allergies(self, filename):
         ''' fulfill the allergies table from the given file '''
