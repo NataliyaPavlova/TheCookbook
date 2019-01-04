@@ -7,8 +7,7 @@ from flask import Flask, flash, redirect, render_template, request, session
 from flask_session import Session
 
 from models import Users, Allergies, Recipes
-
-#from helpers import cookbook, meets_conditions, find_recipe, search_recipes, str_to_list, login_required, apology
+from helpers import login_required, apology
 
 # Configure application
 app = Flask(__name__)
