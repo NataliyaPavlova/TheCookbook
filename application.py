@@ -1,32 +1,19 @@
-import json
-import pprint
-from tempfile import mkdtemp
+#import json
+#import pprint
+import os
 from werkzeug.exceptions import default_exceptions
+from flask import redirect, render_template, request, session
+#from flask_session import Session
 
-from flask import Flask, flash, redirect, render_template, request, session
-from flask_session import Session
-
-from models import Users, Allergies, Recipes
+from models import Users, Recipes, db_init
+from utils import app
 from helpers import login_required, apology
 
-# Configure application
-app = Flask(__name__)
-
-'''
-# Ensure responses aren't cached
-@app.after_request
-def after_request(response):
-    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    response.headers["Expires"] = 0
-    response.headers["Pragma"] = "no-cache"
-    return response
-'''
-# Configure session to use filesystem (instead of signed cookies)
-app.config["SESSION_FILE_DIR"] = mkdtemp()
-app.config["SESSION_PERMANENT"] = False
-app.config["SESSION_TYPE"] = "filesystem"
-Session(app)
-
+# init and fulfill the db
+# 'allergies.json' - allergy's type and common products containing the allergen
+# 'full_format_recipes.json' - recipes collection from kaggle
+basepath = os.path.abspath(".")
+db_init(basepath + '/static/allergies.json', basepath + '/static/full_format_recipes.json')
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -46,12 +33,12 @@ def login():
         elif not request.form.get("password"):
             return apology("must provide password", 403)
 
-        result = Users.check_login(request.form.get("username"), password )
+        result = Users.check_login(request.form.get("username"), request.form.get("password") )
         if not result:
             return apology("invalid username and/or password", 403)
 
         # Remember which user has logged in
-        session["user_id"] = request.form.get("username")
+        session["user_id"] = result
 
         # Redirect user to home page
         return redirect("/")
@@ -99,7 +86,7 @@ def register():
             return apology("the username is already used...", 403)
 
         #remember who is registered
-        session["user_id"] = request.form.get("username")
+        session["user_id"] = result
 
      # User reached route via GET (as by clicking a link or via redirect)
     else:
@@ -125,7 +112,7 @@ def filter():
 @login_required
 def search_result():
     # Find and show search results to user
-   
+
     #upload user's allergies and preferencies from db
     result1 = db.execute("SELECT * FROM users WHERE id=:id", id=session["user_id"])
     if not result1:
@@ -269,3 +256,4 @@ def errorhandler(e):
 # listen for errors
 for code in default_exceptions:
     app.errorhandler(code)(errorhandler)
+
